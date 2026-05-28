@@ -1,16 +1,21 @@
 # Claude Code → NVIDIA NIM Fallback
 
-Route Claude Code agent traffic through a local [LiteLLM](https://github.com/BerriAI/litellm) proxy, with **DeepSeek V4 Pro** on NVIDIA NIM as a fallback when your Anthropic Max account hits rate limits.
+Route Claude Code agent traffic through a local proxy, with automatic rotation across the strongest **NVIDIA NIM** models as a fallback when your Anthropic Max account hits rate limits.
 
 ```
-Claude Code agents
+Claude Code agents  (Anthropic SDK /v1/messages format)
       │
       ▼
-LiteLLM proxy (localhost:4000)
+nim_proxy.py  (localhost:4000)
       │
-      ├─ primary ──▶ Anthropic API (your API key / Max OAuth)
-      └─ fallback ──▶ NVIDIA NIM  (DeepSeek V4 Pro)
+      ├─ try 1 ──▶ Nemotron Ultra 253B
+      ├─ try 2 ──▶ Mistral Large 3 675B   ← rotates on 429 / timeout
+      ├─ try 3 ──▶ Qwen 3.5 397B
+      ├─ try 4 ──▶ DeepSeek V4 Pro
+      └─ try 5 ──▶ Llama 3.3 70B (fast fallback)
 ```
+
+Models that return 429 or timeout go on a 60-second cooldown; the next available model in the pool is tried automatically. Claude Code never needs to know — it just sees an Anthropic-compatible endpoint.
 
 Switch backends in one command:
 
@@ -49,8 +54,8 @@ The script will prompt for your API keys and wire everything up.
 
 ## What `setup.sh` does
 
-1. Installs `litellm[proxy]` via pip
-2. Creates `~/litellm/config.yaml` with DeepSeek V4 Pro on NVIDIA NIM
+1. Installs `fastapi uvicorn httpx` via pip (lightweight, no heavy deps)
+2. Copies `litellm/nim_proxy.py` to `~/litellm/` — the custom rotation proxy
 3. Creates `~/litellm/.env` with your API keys (chmod 600)
 4. Registers the proxy as a background service (systemd on Linux, launchd on macOS)
 5. Installs `~/bin/switch-backend` toggle script
