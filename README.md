@@ -30,7 +30,7 @@ Or from Claude Code: `/switch-backend nvidia`
 - Linux (systemd) or macOS (launchd)
 - Claude Code CLI installed
 - API keys:
-  - [NVIDIA NIM](https://integrate.api.nvidia.com) — free tier available
+  - **NVIDIA NIM** — free tier available. Get your key at [build.nvidia.com](https://build.nvidia.com) → sign in → top-right menu → **API Keys** → Generate. The key starts with `nvapi-`.
   - Anthropic API key (optional — can use Claude Max OAuth instead)
 
 ---
