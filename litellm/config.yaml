@@ -1,29 +1,71 @@
 model_list:
-  # All Claude model names map to DeepSeek V4 Pro on NVIDIA NIM.
-  # Claude Code / agents request claude-opus-4-7 and get DeepSeek transparently.
+  # Primary: Anthropic (API key — use when credits are available)
   - model_name: claude-opus-4-7
     litellm_params:
-      model: openai/deepseek-ai/deepseek-v4-pro
-      api_base: https://integrate.api.nvidia.com/v1
-      api_key: os.environ/NVIDIA_NIM_API_KEY
+      model: anthropic/claude-opus-4-7
+      api_key: os.environ/ANTHROPIC_API_KEY
     model_info:
       mode: chat
 
   - model_name: claude-sonnet-4-6
     litellm_params:
-      model: openai/deepseek-ai/deepseek-v4-pro
-      api_base: https://integrate.api.nvidia.com/v1
-      api_key: os.environ/NVIDIA_NIM_API_KEY
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
     model_info:
       mode: chat
 
   - model_name: claude-haiku-4-5
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      mode: chat
+
+  # Fallback: NVIDIA NIM — DeepSeek V4 Pro
+  - model_name: nvidia-claude-opus-4-7
     litellm_params:
       model: openai/deepseek-ai/deepseek-v4-pro
       api_base: https://integrate.api.nvidia.com/v1
       api_key: os.environ/NVIDIA_NIM_API_KEY
     model_info:
       mode: chat
+
+  - model_name: nvidia-claude-sonnet-4-6
+    litellm_params:
+      model: openai/deepseek-ai/deepseek-v4-pro
+      api_base: https://integrate.api.nvidia.com/v1
+      api_key: os.environ/NVIDIA_NIM_API_KEY
+    model_info:
+      mode: chat
+
+  - model_name: nvidia-claude-haiku-4-5
+    litellm_params:
+      model: openai/deepseek-ai/deepseek-v4-pro
+      api_base: https://integrate.api.nvidia.com/v1
+      api_key: os.environ/NVIDIA_NIM_API_KEY
+    model_info:
+      mode: chat
+
+router_settings:
+  # After 1 failure of any type (including 400 credit-balance errors),
+  # put Anthropic in cooldown and route to NVIDIA NIM fallback.
+  allowed_fails: 1
+  cooldown_time: 300  # retry Anthropic after 5 min
+  num_retries: 0
+  retry_after: 0
+  fallbacks:
+    - claude-opus-4-7:
+        - nvidia-claude-opus-4-7
+    - claude-sonnet-4-6:
+        - nvidia-claude-sonnet-4-6
+    - claude-haiku-4-5:
+        - nvidia-claude-haiku-4-5
+  # Trigger fallback on these error types (includes credit/auth errors)
+  allowed_fails_policy:
+    BadRequestErrorAllowedFails: 1
+    AuthenticationErrorAllowedFails: 1
+    RateLimitErrorAllowedFails: 1
+    ContentPolicyViolationErrorAllowedFails: 0
 
 litellm_settings:
   drop_params: true
