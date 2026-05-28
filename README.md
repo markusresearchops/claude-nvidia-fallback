@@ -27,8 +27,8 @@ Or from Claude Code: `/switch-backend nvidia`
 ## Prerequisites
 
 - Python 3.10+
-- `systemd` (Linux)
-- A Claude Code setup running a director that spawns agents (or any setup that respects `ANTHROPIC_BASE_URL`)
+- Linux (systemd) or macOS (launchd)
+- Claude Code CLI installed
 - API keys:
   - [NVIDIA NIM](https://integrate.api.nvidia.com) — free tier available
   - Anthropic API key (optional — can use Claude Max OAuth instead)
@@ -52,10 +52,9 @@ The script will prompt for your API keys and wire everything up.
 1. Installs `litellm[proxy]` via pip
 2. Creates `~/litellm/config.yaml` with DeepSeek V4 Pro on NVIDIA NIM
 3. Creates `~/litellm/.env` with your API keys (chmod 600)
-4. Installs `~/.config/systemd/user/litellm-proxy.service` and enables it
+4. Registers the proxy as a background service (systemd on Linux, launchd on macOS)
 5. Installs `~/bin/switch-backend` toggle script
 6. Installs `/switch-backend` Claude Code slash command
-7. Creates a systemd drop-in for your director service (optional)
 
 ---
 
@@ -89,29 +88,74 @@ chmod 600 ~/litellm/.env
 
 ### 4. Start the proxy
 
+**Linux (systemd):**
+
 ```bash
 cp systemd/litellm-proxy.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now litellm-proxy
 ```
 
+**macOS (launchd):**
+
+```bash
+# Fill in your username in the plist first
+sed "s/YOUR_USERNAME/$(whoami)/g" launchd/com.litellm.proxy.plist \
+  > ~/Library/LaunchAgents/com.litellm.proxy.plist
+
+launchctl load ~/Library/LaunchAgents/com.litellm.proxy.plist
+launchctl start com.litellm.proxy
+```
+
+Logs go to `~/litellm/litellm-proxy.log`. Check with:
+```bash
+tail -f ~/litellm/litellm-proxy.log
+```
+
+To stop/unload:
+```bash
+launchctl unload ~/Library/LaunchAgents/com.litellm.proxy.plist
+```
+
 ### 5. Install switch-backend
 
 ```bash
+mkdir -p ~/bin
 cp bin/switch-backend ~/bin/switch-backend
 chmod +x ~/bin/switch-backend
+
+# Make sure ~/bin is on your PATH (add to ~/.zshrc or ~/.bashrc if needed):
+# export PATH="$HOME/bin:$PATH"
 
 mkdir -p ~/.claude/commands
 cp .claude/commands/switch-backend.md ~/.claude/commands/
 ```
 
-### 6. Wire into your director (optional)
+### 6. Wire into Claude Code (all platforms)
 
-If you have a system-level director service (`monitor-deepresearch.service` or similar), create a drop-in:
+Add to your shell profile (`~/.zshrc` on Mac, `~/.bashrc` on Linux):
+
+```bash
+export ANTHROPIC_BASE_URL=http://localhost:4000
+export ANTHROPIC_API_KEY=$(grep LITELLM_MASTER_KEY ~/litellm/.env | cut -d= -f2)
+```
+
+Then restart your terminal. Claude Code will now route through LiteLLM → DeepSeek V4 Pro.
+
+To switch back to Anthropic directly:
+```bash
+unset ANTHROPIC_BASE_URL
+unset ANTHROPIC_API_KEY   # or set to your real Anthropic key
+```
+
+### 7. Wire into a director service (Linux only, optional)
+
+If you have a system-level director service (`monitor-deepresearch.service` or similar):
 
 ```bash
 sudo mkdir -p /etc/systemd/system/YOUR-DIRECTOR.service.d/
 sudo cp systemd/litellm-dropin.conf /etc/systemd/system/YOUR-DIRECTOR.service.d/litellm.conf
+# Edit the file to replace YOUR-USERNAME with your actual username
 sudo systemctl daemon-reload
 sudo systemctl restart YOUR-DIRECTOR
 ```

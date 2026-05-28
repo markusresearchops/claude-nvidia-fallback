@@ -28,14 +28,32 @@ LITELLM_MASTER_KEY=${MASTER_KEY}
 EOF
 chmod 600 ~/litellm/.env
 
-# 4. Systemd user service
-echo "[4/6] Installing litellm-proxy systemd service..."
-mkdir -p ~/.config/systemd/user
-cp systemd/litellm-proxy.service ~/.config/systemd/user/litellm-proxy.service
-systemctl --user daemon-reload
-systemctl --user enable --now litellm-proxy
-sleep 5
-systemctl --user is-active litellm-proxy && echo "  ✓ LiteLLM proxy running on localhost:4000"
+# 4. Background service (systemd on Linux, launchd on macOS)
+echo "[4/6] Installing background service..."
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    PLIST=~/Library/LaunchAgents/com.litellm.proxy.plist
+    mkdir -p ~/Library/LaunchAgents
+    sed "s/YOUR_USERNAME/$(whoami)/g" launchd/com.litellm.proxy.plist > "$PLIST"
+    # Inject env vars into the plist
+    LITELLM_BIN=$(python3 -c "import shutil; print(shutil.which('litellm') or '$HOME/.local/bin/litellm')")
+    sed -i '' "s|/Users/YOUR_USERNAME/.local/bin/litellm|${LITELLM_BIN}|g" "$PLIST"
+    # Write env vars into the plist EnvironmentVariables dict
+    /usr/libexec/PlistBuddy -c "Set :EnvironmentVariables:NVIDIA_NIM_API_KEY ${NVIDIA_KEY}" "$PLIST" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:NVIDIA_NIM_API_KEY string ${NVIDIA_KEY}" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:ANTHROPIC_API_KEY string ${ANTHROPIC_KEY}" "$PLIST" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:LITELLM_MASTER_KEY string ${MASTER_KEY}" "$PLIST" 2>/dev/null || true
+    launchctl unload "$PLIST" 2>/dev/null || true
+    launchctl load "$PLIST"
+    sleep 3
+    launchctl list | grep com.litellm && echo "  ✓ LiteLLM proxy running on localhost:4000 (launchd)"
+else
+    mkdir -p ~/.config/systemd/user
+    cp systemd/litellm-proxy.service ~/.config/systemd/user/litellm-proxy.service
+    systemctl --user daemon-reload
+    systemctl --user enable --now litellm-proxy
+    sleep 5
+    systemctl --user is-active litellm-proxy && echo "  ✓ LiteLLM proxy running on localhost:4000 (systemd)"
+fi
 
 # 5. switch-backend script
 echo "[5/6] Installing switch-backend..."
@@ -51,12 +69,17 @@ cp .claude/commands/switch-backend.md ~/.claude/commands/switch-backend.md
 echo
 echo "=== Done ==="
 echo
+echo "Add these lines to your shell profile (~/.zshrc on Mac, ~/.bashrc on Linux)"
+echo "to route Claude Code through LiteLLM by default:"
+echo
+echo "  export ANTHROPIC_BASE_URL=http://localhost:4000"
+echo "  export ANTHROPIC_API_KEY=${MASTER_KEY}"
+echo
+echo "Then restart your terminal and run: switch-backend status"
+echo
 echo "Usage:"
-echo "  switch-backend nvidia      # route agents to DeepSeek V4 Pro"
-echo "  switch-backend anthropic   # route agents to Anthropic"
+echo "  switch-backend nvidia      # route to DeepSeek V4 Pro on NVIDIA NIM"
+echo "  switch-backend anthropic   # route to Anthropic directly"
 echo "  switch-backend status      # show current backend"
 echo
 echo "From Claude Code: /switch-backend nvidia"
-echo
-echo "To wire into a director service, see README.md § 'Wire into your director'."
-echo "LITELLM_MASTER_KEY=${MASTER_KEY}"

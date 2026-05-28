@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.litellm.proxy</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOUR_USERNAME/.local/bin/litellm</string>
+    <string>--config</string>
+    <string>/Users/YOUR_USERNAME/litellm/config.yaml</string>
+    <string>--port</string>
+    <string>4000</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- These are loaded from ~/litellm/.env by the setup script -->
+    <key>HOME</key>
+    <string>/Users/YOUR_USERNAME</string>
+  </dict>
+
+  <!-- Load env file values — populated by setup.sh -->
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOUR_USERNAME/litellm/litellm-proxy.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/YOUR_USERNAME/litellm/litellm-proxy.log</string>
+</dict>
+</plist>
