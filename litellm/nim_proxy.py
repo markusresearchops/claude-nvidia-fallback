@@ -33,6 +33,19 @@ _cooldown: dict[str, float] = defaultdict(float)
 COOLDOWN_SECS = 60
 
 app = FastAPI()
+_client: httpx.AsyncClient | None = None
+
+
+@app.on_event("startup")
+async def startup():
+    global _client
+    _client = httpx.AsyncClient(timeout=180)
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    if _client:
+        await _client.aclose()
 
 
 def _available_models() -> list[str]:
@@ -140,30 +153,29 @@ async def messages(request: Request):
     oai_payload = _anthropic_to_openai(body)
     is_stream = oai_payload.get("stream", False)
 
-    async with httpx.AsyncClient(timeout=180) as client:
-        for model in _available_models():
-            oai_payload["model"] = model
-            try:
-                if is_stream:
-                    return await _stream(client, oai_payload, model)
-                resp = await client.post(
-                    f"{NIM_BASE}/chat/completions",
-                    json=oai_payload,
-                    headers={"Authorization": f"Bearer {NVIDIA_API_KEY}"},
-                )
-                if resp.status_code in (429, 503, 502):
-                    _set_cooldown(model)
-                    log.warning("%s → %s, rotating", model, resp.status_code)
-                    continue
-                resp.raise_for_status()
-                oai_resp = resp.json()
-                return JSONResponse(_openai_to_anthropic(oai_resp, model))
-            except httpx.TimeoutException:
+    for model in _available_models():
+        oai_payload["model"] = model
+        try:
+            if is_stream:
+                return await _stream(_client, oai_payload, model)
+            resp = await _client.post(
+                f"{NIM_BASE}/chat/completions",
+                json=oai_payload,
+                headers={"Authorization": f"Bearer {NVIDIA_API_KEY}"},
+            )
+            if resp.status_code in (429, 503, 502):
                 _set_cooldown(model)
-                log.warning("%s → timeout, rotating", model)
-            except Exception as e:
-                _set_cooldown(model)
-                log.warning("%s → %s, rotating", model, e)
+                log.warning("%s → %s, rotating", model, resp.status_code)
+                continue
+            resp.raise_for_status()
+            oai_resp = resp.json()
+            return JSONResponse(_openai_to_anthropic(oai_resp, model))
+        except httpx.TimeoutException:
+            _set_cooldown(model)
+            log.warning("%s → timeout, rotating", model)
+        except Exception as e:
+            _set_cooldown(model)
+            log.warning("%s → %s, rotating", model, e)
 
     return JSONResponse(
         {"type": "error", "error": {"type": "overloaded_error",
