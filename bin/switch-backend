@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# switch-backend [anthropic|nvidia|status]
+# Toggles Claude Code agents between Anthropic and NVIDIA NIM (DeepSeek V4 Pro).
+#
+# Requires: LITELLM_CONFIG (default: ~/litellm/config.yaml)
+#           DIRECTOR_SERVICE — set to your director service name if using systemd
+
+DIRECTOR_SERVICE=${DIRECTOR_SERVICE:-""}
+MODE=${1:-status}
+
+ACTIVE_FILE=~/.litellm-backend
+
+set_backend() {
+    echo "$1" > "$ACTIVE_FILE"
+}
+
+current_mode() {
+    cat "$ACTIVE_FILE" 2>/dev/null || echo "nvidia"
+}
+
+restart_director() {
+    if [ -n "$DIRECTOR_SERVICE" ]; then
+        if systemctl is-system-unit "$DIRECTOR_SERVICE" &>/dev/null; then
+            sudo systemctl restart "$DIRECTOR_SERVICE"
+        else
+            systemctl --user restart "$DIRECTOR_SERVICE"
+        fi
+    fi
+}
+
+case "$MODE" in
+    anthropic|claude)
+        # Remove ANTHROPIC_BASE_URL so Claude Code talks to Anthropic directly
+        unset ANTHROPIC_BASE_URL
+        # Persist for director restart
+        if [ -f /etc/systemd/system/"${DIRECTOR_SERVICE}".service.d/litellm.conf ] && [ -n "$DIRECTOR_SERVICE" ]; then
+            sudo sed -i 's/^Environment=ANTHROPIC_BASE_URL/#Environment=ANTHROPIC_BASE_URL/' \
+                /etc/systemd/system/"${DIRECTOR_SERVICE}".service.d/litellm.conf
+            sudo systemctl daemon-reload
+            restart_director
+        fi
+        set_backend "anthropic"
+        echo "✓ Backend: Anthropic (Max OAuth / API key)"
+        echo "  Restart your Claude Code session or set: unset ANTHROPIC_BASE_URL"
+        ;;
+    nvidia|nim|deepseek)
+        if [ -f /etc/systemd/system/"${DIRECTOR_SERVICE}".service.d/litellm.conf ] && [ -n "$DIRECTOR_SERVICE" ]; then
+            sudo sed -i 's/^#Environment=ANTHROPIC_BASE_URL/Environment=ANTHROPIC_BASE_URL/' \
+                /etc/systemd/system/"${DIRECTOR_SERVICE}".service.d/litellm.conf
+            sudo systemctl daemon-reload
+            restart_director
+        fi
+        set_backend "nvidia"
+        echo "✓ Backend: NVIDIA NIM (DeepSeek V4 Pro) via LiteLLM → localhost:4000"
+        echo "  Set: export ANTHROPIC_BASE_URL=http://localhost:4000"
+        echo "  And: export ANTHROPIC_API_KEY=\$(grep LITELLM_MASTER_KEY ~/litellm/.env | cut -d= -f2)"
+        ;;
+    status)
+        MODE=$(current_mode)
+        if [ "$MODE" = "nvidia" ]; then
+            echo "Current backend: NVIDIA NIM (DeepSeek V4 Pro) via LiteLLM → localhost:4000"
+        else
+            echo "Current backend: Anthropic (Max OAuth / API key)"
+        fi
+        ;;
+    *)
+        echo "Usage: switch-backend [anthropic|nvidia|status]"
+        exit 1
+        ;;
+esac

@@ -1,0 +1,13 @@
+[Unit]
+Description=LiteLLM proxy (Claude Code → NVIDIA NIM fallback)
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/litellm/.env
+ExecStart=%h/.local/bin/litellm --config %h/litellm/config.yaml --port 4000
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
